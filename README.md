@@ -1,150 +1,168 @@
-# Installing ezkl on macOS (Apple Silicon)
+# Installing ezkl
 
-This guide documents how to install [ezkl](https://github.com/zkonduit/ezkl) on macOS, especially Apple Silicon (`aarch64`), based on real installation failures and what actually works.
+A practical guide to installing [ezkl](https://github.com/zkonduit/ezkl), based on common failures and what actually works.
 
 Official docs: [docs.ezkl.xyz/getting-started/installation](https://docs.ezkl.xyz/getting-started/installation)
 
 ---
 
-## Quick answer
+## Three ways to use ezkl
 
-| Goal | Command / method |
-|------|------------------|
-| **CLI in terminal** (`ezkl --help`) | Install the **v23.0.3** macOS binary (see below) |
-| **Python** (`import ezkl`) | `pip install ezkl` — already works, but does **not** add a shell command |
+ezkl is not one install — it is three different packages depending on what you need:
 
----
+| What you want | Install method | Gives you a shell command? |
+|---------------|----------------|----------------------------|
+| **CLI** (`ezkl --help`) | GitHub release binary or build from source | Yes |
+| **Python** (`import ezkl`) | `pip install ezkl` | No |
+| **JavaScript** | `npm install @ezkljs/engine` | No |
 
-## Where the Apple Silicon binary comes from
-
-The CLI binary is **not from Homebrew, pip, or crates.io**. It is a **pre-built release artifact** published by the ezkl maintainers on GitHub.
-
-| Field | Value |
-|-------|--------|
-| Repository | [github.com/zkonduit/ezkl](https://github.com/zkonduit/ezkl) |
-| Releases page | [github.com/zkonduit/ezkl/releases](https://github.com/zkonduit/ezkl/releases) |
-| Version used here | **v23.0.3** (last release that included macOS builds at the time this was written) |
-| Asset filename | `build-artifacts.ezkl-macos-aarch64.tar.gz` |
-| Direct download URL | [v23.0.3 macOS Apple Silicon tarball](https://github.com/zkonduit/ezkl/releases/download/v23.0.3/build-artifacts.ezkl-macos-aarch64.tar.gz) |
-
-**How this was determined:** the official install script calls the GitHub API for the latest release and searches release assets for a macOS `aarch64` tarball. As of v23.0.5, that asset is **missing** from the latest release (only Linux and Windows assets are published). v23.0.3 still includes:
-
-- `build-artifacts.ezkl-macos-aarch64.tar.gz` — Apple Silicon (M1/M2/M3/M4)
-- `build-artifacts.ezkl-macos.tar.gz` — Intel Mac (`x86_64`)
-
-The install script source (for reference): [install_ezkl_cli.sh](https://github.com/zkonduit/ezkl/blob/main/install_ezkl_cli.sh)
+`pip install ezkl` succeeding does **not** mean `ezkl` works in your terminal. Those are separate installs.
 
 ---
 
-## Why common install methods fail
+## Where CLI binaries come from
 
-### `brew install ezkl`
+The CLI is **not** on Homebrew, pip, or crates.io. Pre-built binaries are published as **GitHub release assets**:
 
-Homebrew has **no formula** named `ezkl`. This will always fail.
+- **Repository:** [github.com/zkonduit/ezkl](https://github.com/zkonduit/ezkl)
+- **Releases:** [github.com/zkonduit/ezkl/releases](https://github.com/zkonduit/ezkl/releases)
+- **Install script:** [install_ezkl_cli.sh](https://github.com/zkonduit/ezkl/blob/main/install_ezkl_cli.sh)
 
-### Official installer (latest version)
+The script detects your OS/architecture, finds the matching tarball in a release, downloads it to `~/.ezkl/ezkl`, and adds `~/.ezkl` to your PATH.
+
+### Release assets by platform
+
+Asset names vary by release. Typical filenames:
+
+| Platform | Asset name (examples) |
+|----------|------------------------|
+| Linux x86_64 | `ezkl-linux-gnu.tar.gz` or `build-artifacts.ezkl-linux-gnu.tar.gz` |
+| Linux ARM64 | `ezkl-linux-aarch64.tar.gz` or `build-artifacts.ezkl-linux-aarch64.tar.gz` |
+| Windows | `ezkl-windows-msvc.tar.gz` or `build-artifacts.ezkl-windows-msvc.tar.gz` |
+| macOS Apple Silicon | `build-artifacts.ezkl-macos-aarch64.tar.gz` |
+| macOS Intel | `build-artifacts.ezkl-macos.tar.gz` |
+
+**Important:** not every release includes every platform. Always check assets before installing (see [Check release assets](#check-release-assets) below).
+
+---
+
+## Recommended install: official CLI script
+
+Works on Linux and Windows when the latest release includes a binary for your platform:
 
 ```bash
 curl https://raw.githubusercontent.com/zkonduit/ezkl/main/install_ezkl_cli.sh | bash
 ```
 
-On Apple Silicon this often **stops silently** after:
+Install a specific version (useful when latest is missing your platform):
+
+```bash
+curl -s https://raw.githubusercontent.com/zkonduit/ezkl/main/install_ezkl_cli.sh | bash -s v23.0.3
+```
+
+Reload your shell after install:
+
+```bash
+# zsh
+source ~/.zshenv
+
+# bash
+source ~/.bashrc
+```
+
+Verify:
+
+```bash
+which ezkl
+ezkl --help
+```
+
+---
+
+## Why common methods fail
+
+### `brew install ezkl`
+
+No Homebrew formula exists. This always fails.
+
+### `pip install ezkl`
+
+Installs the **Python library only**. You get `import ezkl`, not a terminal command.
+
+### `cargo install ezkl`
+
+Fails with:
+
+```
+error: could not find `ezkl` in registry `crates-io`
+```
+
+The CLI is not published to crates.io. Use a GitHub release binary or build from a cloned repo instead.
+
+### Archon (`download_archon.sh`)
+
+A **separate** remote-proving tool, not the core ezkl CLI. The download URL may return HTML instead of a script.
+
+---
+
+## Platform notes
+
+### Linux
+
+The official installer usually works out of the box on recent releases. Latest releases (e.g. v23.0.5) include Linux assets:
+
+- `ezkl-linux-gnu.tar.gz` — x86_64
+- `ezkl-linux-aarch64.tar.gz` — ARM64
+
+Manual download example (x86_64):
+
+```bash
+mkdir -p ~/.ezkl
+curl -L \
+  "https://github.com/zkonduit/ezkl/releases/download/v23.0.5/ezkl-linux-gnu.tar.gz" \
+  -o ~/.ezkl/ezkl-linux-gnu.tar.gz
+tar -xzf ~/.ezkl/ezkl-linux-gnu.tar.gz -C ~/.ezkl
+export PATH="$PATH:$HOME/.ezkl"
+```
+
+### Windows
+
+Use the official installer script in Git Bash or WSL, or download `ezkl-windows-msvc.tar.gz` from [releases](https://github.com/zkonduit/ezkl/releases) manually.
+
+### macOS
+
+The default installer **may fail silently** if the latest release has no macOS binary. This was the case for v23.0.5 at the time this guide was written — Linux and Windows assets were published, but not macOS.
+
+Symptom: script stops after:
 
 ```
 Platform: macos
 Architecture: aarch64
 ```
 
-**Reason:** the script installs from the **latest** GitHub release. If that release has no macOS asset, the script cannot find a download URL and exits before downloading anything. `~/.ezkl` stays empty.
+`~/.ezkl` stays empty because there is nothing to download.
 
-### `pip install ezkl`
-
-This **succeeds** and installs the Python library (`import ezkl`). It does **not** install a terminal command named `ezkl`. Running `ezkl` in the shell will still give:
-
-```
-zsh: command not found: ezkl
-```
-
-### `cargo install ezkl --locked`
-
-This fails with:
-
-```
-error: could not find `ezkl` in registry `crates-io`
-```
-
-The CLI crate is **not published** to crates.io under that name. Building from a cloned repo is possible but slow and can hit dependency build errors.
-
-### Archon remote CLI
-
-```bash
-curl https://download.ezkl.xyz/download_archon.sh | bash
-```
-
-This is a **separate** remote-proving tool, not the core `ezkl` CLI. The download URL may return HTML instead of a shell script, causing parse errors.
-
----
-
-## Working install: CLI on Apple Silicon
-
-### Option 1 — Pinned installer (easiest)
-
-Install **v23.0.3** explicitly so the script does not pull the Mac-less latest release:
+**Fix:** pin a release that includes macOS assets, e.g. v23.0.3:
 
 ```bash
 curl -s https://raw.githubusercontent.com/zkonduit/ezkl/main/install_ezkl_cli.sh | bash -s v23.0.3
 ```
 
-Then reload your shell:
+Or download manually:
 
-```bash
-source ~/.zshenv
-```
-
-The script installs the binary to `~/.ezkl/ezkl` and appends that directory to your PATH in `~/.zshenv` (zsh).
-
-### Option 2 — Manual download
+| Mac type | Asset | URL |
+|----------|-------|-----|
+| Apple Silicon (M1/M2/M3/M4) | `build-artifacts.ezkl-macos-aarch64.tar.gz` | [v23.0.3 download](https://github.com/zkonduit/ezkl/releases/download/v23.0.3/build-artifacts.ezkl-macos-aarch64.tar.gz) |
+| Intel | `build-artifacts.ezkl-macos.tar.gz` | [v23.0.3 download](https://github.com/zkonduit/ezkl/releases/download/v23.0.3/build-artifacts.ezkl-macos.tar.gz) |
 
 ```bash
 mkdir -p ~/.ezkl
-
-curl -L \
-  "https://github.com/zkonduit/ezkl/releases/download/v23.0.3/build-artifacts.ezkl-macos-aarch64.tar.gz" \
-  -o ~/.ezkl/ezkl-macos-aarch64.tar.gz
-
-tar -xzf ~/.ezkl/ezkl-macos-aarch64.tar.gz -C ~/.ezkl
-rm ~/.ezkl/ezkl-macos-aarch64.tar.gz
-```
-
-Add to PATH if not already present (in `~/.zshenv` for zsh):
-
-```bash
+curl -L "<url-from-table-above>" -o ~/.ezkl/ezkl.tar.gz
+tar -xzf ~/.ezkl/ezkl.tar.gz -C ~/.ezkl
 export PATH="$PATH:$HOME/.ezkl"
-source ~/.zshenv
 ```
 
-### Option 3 — Intel Mac
-
-Use the Intel asset from the same release:
-
-```bash
-curl -L \
-  "https://github.com/zkonduit/ezkl/releases/download/v23.0.3/build-artifacts.ezkl-macos.tar.gz" \
-  -o ~/.ezkl/ezkl-macos.tar.gz
-
-tar -xzf ~/.ezkl/ezkl-macos.tar.gz -C ~/.ezkl
-```
-
----
-
-## Verify the CLI install
-
-```bash
-which ezkl          # should print something like /Users/you/.ezkl/ezkl
-ezkl --help
-```
-
-If macOS blocks the binary (unidentified developer):
+If macOS blocks the binary (Gatekeeper):
 
 ```bash
 xattr -d com.apple.quarantine ~/.ezkl/ezkl
@@ -154,43 +172,70 @@ Or allow it under **System Settings → Privacy & Security**.
 
 ---
 
-## Working install: Python bindings
-
-If you only need Python (notebooks, `import ezkl`), pip is enough:
+## Python bindings
 
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install ezkl
 python3 -c "import ezkl; print('OK')"
 ```
 
-This does not provide the `ezkl` shell command. Use the Python API (`ezkl.gen_settings`, `ezkl.compile_circuit`, etc.) instead.
+Use the Python API (`ezkl.gen_settings`, `ezkl.compile_circuit`, etc.). No shell command is installed.
+
+GPU variant: `pip install ezkl-gpu`
 
 ---
 
-## Build from source (last resort)
+## Build from source (any platform)
+
+Requires [Rust](https://rustup.rs) and `cargo`. Slow, but works when no pre-built binary exists for your platform.
 
 ```bash
 git clone https://github.com/zkonduit/ezkl.git
 cd ezkl
-git checkout v23.0.3
+git checkout v23.0.3   # or a tag/commit that includes your platform
 cargo install --locked --path .
 ```
 
-Ensure `~/.cargo/bin` is on your PATH. Expect a long compile and possible dependency issues on some commits.
+Ensure `~/.cargo/bin` is on your PATH. Source builds can fail on some commits due to dependency issues.
 
 ---
 
-## Docker alternative
+## Docker (any platform)
 
-If native macOS builds are unavailable or broken:
+If native binaries are unavailable or broken:
 
 ```bash
 docker pull zkonduit/ezkl:latest
 ```
 
-Run `ezkl` inside the container. Less convenient for daily CLI use, but uses the Linux release artifacts reliably.
+Run `ezkl` inside the container.
+
+---
+
+## Uninstall
+
+There is no `curl` uninstall flag. Remove ezkl based on how you installed it:
+
+| How installed | Uninstall |
+|---------------|-----------|
+| GitHub binary / install script | `rm -f ~/.ezkl/ezkl` (or `rm -rf ~/.ezkl`) and remove `~/.ezkl` from PATH in your shell config |
+| pip | `pip uninstall ezkl` |
+| cargo (from source) | `cargo uninstall ezkl` |
+
+---
+
+## Check release assets
+
+Before relying on the default installer, confirm your platform is in the latest release:
+
+```bash
+curl -s "https://api.github.com/repos/zkonduit/ezkl/releases/latest" \
+  | python3 -c "import sys,json; [print(a['name']) for a in json.load(sys.stdin).get('assets',[])]"
+```
+
+If your platform is missing, pin an older tag that includes it (e.g. `bash -s v23.0.3`) or build from source / use Docker.
 
 ---
 
@@ -198,24 +243,11 @@ Run `ezkl` inside the container. Less convenient for daily CLI use, but uses the
 
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
-| Installer stops after `Architecture: aarch64` | Latest release has no macOS binary | Pin **v23.0.3** (see above) |
-| `command not found: ezkl` after pip | pip installs Python only | Install the GitHub release binary |
-| `~/.ezkl` is empty | Download never ran | Manual download or pinned installer |
-| macOS won't open binary | Gatekeeper quarantine | `xattr -d com.apple.quarantine ~/.ezkl/ezkl` |
+| `command not found: ezkl` after pip | pip installs Python only | Install the GitHub CLI binary |
+| Installer stops after platform/arch line | Latest release missing your platform's asset | Pin an older tag or manual download |
+| `~/.ezkl` is empty | Download never ran | Check release assets; install manually |
 | `cargo install ezkl` fails | Not on crates.io | Use release binary or build from cloned repo |
-
----
-
-## Check whether a release includes macOS
-
-Before relying on the default installer, inspect release assets:
-
-```bash
-curl -s "https://api.github.com/repos/zkonduit/ezkl/releases/latest" \
-  | python3 -c "import sys,json; [print(a['name']) for a in json.load(sys.stdin).get('assets',[])]"
-```
-
-Look for `build-artifacts.ezkl-macos-aarch64.tar.gz`. If it is missing, pin an older tag that includes it (e.g. `v23.0.3`) or build from source / use Docker.
+| macOS won't open binary | Gatekeeper quarantine | `xattr -d com.apple.quarantine ~/.ezkl/ezkl` |
 
 ---
 
