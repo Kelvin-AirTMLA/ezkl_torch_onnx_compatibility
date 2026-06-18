@@ -1,1 +1,10 @@
 AGENTS.md
+
+# ezkl artifacts
+*.key
+*.srs
+*.ezkl
+witness.json
+proof.json
+network.onnx
+network.ezkl
