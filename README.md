@@ -1,6 +1,6 @@
-# Installing ezkl
+# ezkl setup & notes
 
-A practical guide to installing [ezkl](https://github.com/zkonduit/ezkl), based on common failures and what actually works.
+A practical guide to installing [ezkl](https://github.com/zkonduit/ezkl) and avoiding common pitfalls in the Keras → ONNX → ezkl workflow.
 
 Official docs: [docs.ezkl.xyz/getting-started/installation](https://docs.ezkl.xyz/getting-started/installation)
 
@@ -185,6 +185,29 @@ Use the Python API (`ezkl.gen_settings`, `ezkl.compile_circuit`, etc.). No shell
 
 GPU variant: `pip install ezkl-gpu`
 
+### Python environment gotchas
+
+- **Use one interpreter.** Packages installed in a venv are not visible to `/opt/homebrew/bin/python3` or your system Python. With the venv active, run scripts with `python model.py`, not a hard-coded path to another Python.
+- **TensorFlow needs a supported Python version.** TensorFlow has no wheels for Python 3.14 at the time of writing. Use a venv on **Python 3.11 or 3.13** for `tensorflow`, `tf2onnx`, and `ezkl` together.
+
+```bash
+/opt/homebrew/bin/python3.13 -m venv .venv
+source .venv/bin/activate
+pip install tensorflow tf2onnx ezkl onnx
+```
+
+---
+
+## Keras → ONNX → ezkl workflow
+
+See **[problems.md](./problems.md)** for documented errors and root causes, including:
+
+- `KeyError: 'keras_tensor_N'` — Sequential vs Functional API (`tf2onnx`)
+- `Reshape ToTypedTranslator` — why Flatten breaks `ezkl.gen_settings`
+- Dynamic batch size — why ezkl needs fixed shapes
+
+See `model.py` in this repo for a Functional API export example.
+
 ---
 
 ## Build from source (any platform)
@@ -248,6 +271,10 @@ If your platform is missing, pin an older tag that includes it (e.g. `bash -s v2
 | `~/.ezkl` is empty | Download never ran | Check release assets; install manually |
 | `cargo install ezkl` fails | Not on crates.io | Use release binary or build from cloned repo |
 | macOS won't open binary | Gatekeeper quarantine | `xattr -d com.apple.quarantine ~/.ezkl/ezkl` |
+| `ModuleNotFoundError: tf2onnx` | Script run with wrong Python | Activate venv; use `python model.py` |
+| `No matching distribution for tensorflow` | Python 3.14 (or unsupported version) | Recreate venv on Python 3.11 or 3.13 |
+| `KeyError: 'keras_tensor_N'` | Sequential model + tf2onnx name mismatch | Use Functional API — see [problems.md](./problems.md) |
+| `Reshape ToTypedTranslator` | Dynamic Flatten / batch in ONNX | Fix static shapes — see [problems.md](./problems.md) |
 
 ---
 
@@ -257,3 +284,4 @@ If your platform is missing, pin an older tag that includes it (e.g. `bash -s v2
 - [ezkl releases (binaries)](https://github.com/zkonduit/ezkl/releases)
 - [Official installation docs](https://docs.ezkl.xyz/getting-started/installation)
 - [install_ezkl_cli.sh](https://github.com/zkonduit/ezkl/blob/main/install_ezkl_cli.sh)
+- [tf2onnx — Sequential / Keras 3 issues](https://github.com/onnx/tensorflow-onnx/issues/2319)
