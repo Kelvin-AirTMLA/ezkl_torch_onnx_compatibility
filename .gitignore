@@ -8,3 +8,4 @@ witness.json
 proof.json
 network.onnx
 network.ezkl
+node_modules
