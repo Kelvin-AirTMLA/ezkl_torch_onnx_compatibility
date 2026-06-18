@@ -1,6 +1,7 @@
 AGENTS.md
+.venv-py314/
 
-# ezkl artifacts
+# ezkl artifacts (anywhere in repo)
 *.key
 *.srs
 *.ezkl
@@ -8,6 +9,7 @@ witness.json
 proof.json
 network.onnx
 network.ezkl
-node_modules
 input.json
-evm_deploy.sol
+node_modules/
+reference-pipeline/node_modules/
+reference-pipeline/contracts/evm_deploy.sol

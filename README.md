@@ -1,194 +1,250 @@
-# ezkl setup & notes
+# ezkl — problems, pitfalls & reference
 
-A practical guide to installing [ezkl](https://github.com/zkonduit/ezkl) and avoiding common pitfalls in the Keras → ONNX → ezkl workflow.
+A log of errors encountered in this repo, what they mean, and why they happen.
 
-Official docs: [docs.ezkl.xyz/getting-started/installation](https://docs.ezkl.xyz/getting-started/installation)
+Each problem includes **triggering code** — the exact snippet or command that produced the error.
 
----
-
-## Three ways to use ezkl
-
-ezkl is not one install — it is three different packages depending on what you need:
-
-| What you want | Install method | Gives you a shell command? |
-|---------------|----------------|----------------------------|
-| **CLI** (`ezkl --help`) | GitHub release binary or build from source | Yes |
-| **Python** (`import ezkl`) | `pip install ezkl` | No |
-| **JavaScript** | `npm install @ezkljs/engine` | No |
-
-`pip install ezkl` succeeding does **not** mean `ezkl` works in your terminal. Those are separate installs.
+Official install docs: [docs.ezkl.xyz/getting-started/installation](https://docs.ezkl.xyz/getting-started/installation)
 
 ---
 
-## Where CLI binaries come from
+## Workspace layout
 
-The CLI is **not** on Homebrew, pip, or crates.io. Pre-built binaries are published as **GitHub release assets**:
+```
+ezkl/
+├── README.md              # This file — errors, triggering code, fixes
+├── Project 1/             # Proof-of-Scan biometric vault
+├── Project 2/             # Verifiable algorithmic insurance
+├── Project 3/             # Federated medical DAO
+└── reference-pipeline/    # Working Keras → ONNX → ezkl tutorial
+```
 
-- **Repository:** [github.com/zkonduit/ezkl](https://github.com/zkonduit/ezkl)
-- **Releases:** [github.com/zkonduit/ezkl/releases](https://github.com/zkonduit/ezkl/releases)
-- **Install script:** [install_ezkl_cli.sh](https://github.com/zkonduit/ezkl/blob/main/install_ezkl_cli.sh)
-
-The script detects your OS/architecture, finds the matching tarball in a release, downloads it to `~/.ezkl/ezkl`, and adds `~/.ezkl` to your PATH.
-
-### Release assets by platform
-
-Asset names vary by release. Typical filenames:
-
-| Platform | Asset name (examples) |
-|----------|------------------------|
-| Linux x86_64 | `ezkl-linux-gnu.tar.gz` or `build-artifacts.ezkl-linux-gnu.tar.gz` |
-| Linux ARM64 | `ezkl-linux-aarch64.tar.gz` or `build-artifacts.ezkl-linux-aarch64.tar.gz` |
-| Windows | `ezkl-windows-msvc.tar.gz` or `build-artifacts.ezkl-windows-msvc.tar.gz` |
-| macOS Apple Silicon | `build-artifacts.ezkl-macos-aarch64.tar.gz` |
-| macOS Intel | `build-artifacts.ezkl-macos.tar.gz` |
-
-**Important:** not every release includes every platform. Always check assets before installing (see [Check release assets](#check-release-assets) below).
+Run the tutorial from `reference-pipeline/`. See [reference-pipeline/README.md](./reference-pipeline/README.md).
 
 ---
 
-## Recommended install: official CLI script
+Pipeline:
 
-Works on Linux and Windows when the latest release includes a binary for your platform:
-
-```bash
-curl https://raw.githubusercontent.com/zkonduit/ezkl/main/install_ezkl_cli.sh | bash
 ```
-
-Install a specific version (useful when latest is missing your platform):
-
-```bash
-curl -s https://raw.githubusercontent.com/zkonduit/ezkl/main/install_ezkl_cli.sh | bash -s v23.0.3
-```
-
-Reload your shell after install:
-
-```bash
-# zsh
-source ~/.zshenv
-
-# bash
-source ~/.bashrc
-```
-
-Verify:
-
-```bash
-which ezkl
-ezkl --help
+Keras → tf2onnx → network.onnx → gen_settings → compile_circuit → get_srs → setup
+  → gen_witness → prove → verify → create-evm-verifier → deploy → web3.js
 ```
 
 ---
 
-## Why common methods fail
+## Problem 1: `KeyError: 'keras_tensor_4'` (Sequential vs Functional)
 
-### `brew install ezkl`
+**When:** `tf2onnx.convert.from_keras(model)` with a **Sequential** model.
 
-No Homebrew formula exists. This always fails.
-
-### `pip install ezkl`
-
-Installs the **Python library only**. You get `import ezkl`, not a terminal command.
-
-### `cargo install ezkl`
-
-Fails with:
+**Error:**
 
 ```
-error: could not find `ezkl` in registry `crates-io`
+KeyError: 'keras_tensor_4'
 ```
 
-The CLI is not published to crates.io. Use a GitHub release binary or build from a cloned repo instead.
+### Triggering code
 
-### Archon (`download_archon.sh`)
+```python
+model = tf.keras.Sequential([
+    tf.keras.layers.Input(shape=(28, 28, 1)),
+    tf.keras.layers.Conv2D(32, (3, 3), activation="relu"),
+    tf.keras.layers.Flatten(),
+    tf.keras.layers.Dense(10, activation="softmax"),
+])
 
-A **separate** remote-proving tool, not the core ezkl CLI. The download URL may return HTML instead of a script.
+onnx_model, _ = tf2onnx.convert.from_keras(model)  # KeyError: 'keras_tensor_4'
+```
+
+### Why it fails
+
+`from_keras` traces the graph and maps output names via `reverse_lookup`. Sequential models get auto-generated names like `keras_tensor_4` that do not match the traced graph.
+
+### Fixed code
+
+```python
+inputs = tf.keras.Input(shape=(28, 28, 1))
+x = tf.keras.layers.Conv2D(32, (3, 3), activation="relu")(inputs)
+x = tf.keras.layers.Flatten()(x)
+outputs = tf.keras.layers.Dense(10, activation="softmax")(x)
+model = tf.keras.Model(inputs=inputs, outputs=outputs)
+
+onnx_model, _ = tf2onnx.convert.from_keras(model)  # works
+```
+
+Related issues: [tensorflow-onnx #2319](https://github.com/onnx/tensorflow-onnx/issues/2319), [#2348](https://github.com/onnx/tensorflow-onnx/issues/2348), [#2448](https://github.com/onnx/tensorflow-onnx/issues/2448).
 
 ---
 
-## Platform notes
+## Problem 2: `Reshape ToTypedTranslator` — why Flatten is the problem
 
-### Linux
+**When:** `ezkl.gen_settings("network.onnx")` after exporting with `Flatten()`.
 
-The official installer usually works out of the box on recent releases. Latest releases (e.g. v23.0.5) include Linux assets:
-
-- `ezkl-linux-gnu.tar.gz` — x86_64
-- `ezkl-linux-aarch64.tar.gz` — ARM64
-
-Manual download example (x86_64):
-
-```bash
-mkdir -p ~/.ezkl
-curl -L \
-  "https://github.com/zkonduit/ezkl/releases/download/v23.0.5/ezkl-linux-gnu.tar.gz" \
-  -o ~/.ezkl/ezkl-linux-gnu.tar.gz
-tar -xzf ~/.ezkl/ezkl-linux-gnu.tar.gz -C ~/.ezkl
-export PATH="$PATH:$HOME/.ezkl"
-```
-
-### Windows
-
-Use the official installer script in Git Bash or WSL, or download `ezkl-windows-msvc.tar.gz` from [releases](https://github.com/zkonduit/ezkl/releases) manually.
-
-### macOS
-
-The default installer **may fail silently** if the latest release has no macOS binary. This was the case for v23.0.5 at the time this guide was written — Linux and Windows assets were published, but not macOS.
-
-Symptom: script stops after:
+**Error:**
 
 ```
-Platform: macos
-Architecture: aarch64
+RuntimeError: Failed to generate settings: [graph] [tract] Translating node #17 
+"functional_1/flatten_1/Reshape" Reshape ToTypedTranslator
 ```
 
-`~/.ezkl` stays empty because there is nothing to download.
+### Triggering code
 
-**Fix:** pin a release that includes macOS assets, e.g. v23.0.3:
+```python
+inputs = tf.keras.Input(shape=(28, 28, 1))
+x = tf.keras.layers.Conv2D(32, (3, 3), activation="relu")(inputs)
+x = tf.keras.layers.Flatten()(x)   # exported as dynamic Shape → Concat → Reshape
+outputs = tf.keras.layers.Dense(10, activation="softmax")(x)
+model = tf.keras.Model(inputs=inputs, outputs=outputs)
 
-```bash
-curl -s https://raw.githubusercontent.com/zkonduit/ezkl/main/install_ezkl_cli.sh | bash -s v23.0.3
+onnx_model, _ = tf2onnx.convert.from_keras(model)
+with open("network.onnx", "wb") as f:
+    f.write(onnx_model.SerializeToString())
+
+ezkl.gen_settings("network.onnx")  # fails on flatten_1/Reshape
 ```
 
-Or download manually:
+Also tried (wrong syntax **and** wrong size):
 
-| Mac type | Asset | URL |
-|----------|-------|-----|
-| Apple Silicon (M1/M2/M3/M4) | `build-artifacts.ezkl-macos-aarch64.tar.gz` | [v23.0.3 download](https://github.com/zkonduit/ezkl/releases/download/v23.0.3/build-artifacts.ezkl-macos-aarch64.tar.gz) |
-| Intel | `build-artifacts.ezkl-macos.tar.gz` | [v23.0.3 download](https://github.com/zkonduit/ezkl/releases/download/v23.0.3/build-artifacts.ezkl-macos.tar.gz) |
-
-```bash
-mkdir -p ~/.ezkl
-curl -L "<url-from-table-above>" -o ~/.ezkl/ezkl.tar.gz
-tar -xzf ~/.ezkl/ezkl.tar.gz -C ~/.ezkl
-export PATH="$PATH:$HOME/.ezkl"
+```python
+x = tf.keras.layers.Reshape(10)   # missing (x); 10 ≠ 21632 features after Conv2D
+outputs = tf.keras.layers.Dense(10, activation="softmax")(x)
 ```
 
-If macOS blocks the binary (Gatekeeper):
+### Fixed code
 
-```bash
-xattr -d com.apple.quarantine ~/.ezkl/ezkl
+```python
+x = tf.keras.layers.Reshape((21632,))(x)  # 26×26×32 after Conv2D(3,3) on 28×28
 ```
 
-Or allow it under **System Settings → Privacy & Security**.
+Plus static batch (Problems 3–4).
 
 ---
 
-## Python bindings
+## Problem 3: Dynamic batch size (`unk__32`)
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install ezkl
-python3 -c "import ezkl; print('OK')"
+**When:** ONNX export without fixed batch.
+
+**Error:** Same as Problem 2, or batch shows as symbolic in ONNX inspection.
+
+### Triggering code
+
+```python
+inputs = tf.keras.Input(shape=(28, 28, 1))  # batch=None (default)
+# ...
+onnx_model, _ = tf2onnx.convert.from_keras(model)
 ```
 
-Use the Python API (`ezkl.gen_settings`, `ezkl.compile_circuit`, etc.). No shell command is installed.
+ONNX input after export:
 
-GPU variant: `pip install ezkl-gpu`
+```
+batch: dim_value=0  dim_param='unk__32'
+```
 
-### Python environment gotchas
+### Confirm
 
-- **Use one interpreter.** Packages installed in a venv are not visible to `/opt/homebrew/bin/python3` or your system Python. With the venv active, run scripts with `python model.py`, not a hard-coded path to another Python.
-- **TensorFlow needs a supported Python version.** TensorFlow has no wheels for Python 3.14 at the time of writing. Use a venv on **Python 3.11 or 3.13** for `tensorflow`, `tf2onnx`, and `ezkl` together.
+```bash
+python -c "
+import onnx
+m = onnx.load('network.onnx')
+d = m.graph.input[0].type.tensor_type.shape.dim[0]
+print('batch:', d.dim_value, d.dim_param)
+"
+```
+
+### Fixed code
+
+See Problem 4 — `batch_size=1` **and** `input_signature`.
+
+---
+
+## Problem 4: `batch_size=1` alone is not enough
+
+**When:** Batch is set in Keras but ONNX still has `unk__32`.
+
+### Triggering code
+
+```python
+inputs = tf.keras.Input(shape=(28, 28, 1), batch_size=1)
+x = tf.keras.layers.Conv2D(32, (3, 3), activation="relu")(inputs)
+x = tf.keras.layers.Reshape((21632,))(x)
+outputs = tf.keras.layers.Dense(10, activation="softmax")(x)
+model = tf.keras.Model(inputs=inputs, outputs=outputs)
+
+# batch_size=1 in Keras, but tf2onnx still exports dynamic batch:
+onnx_model, _ = tf2onnx.convert.from_keras(model)
+```
+
+ONNX still shows `unk__32`; `gen_settings` still fails on dynamic Reshape.
+
+### Fixed code
+
+```python
+input_signature = [tf.TensorSpec([1, 28, 28, 1], tf.float32, name="input")]
+onnx_model, _ = tf2onnx.convert.from_keras(model, input_signature=input_signature)
+```
+
+Reshape in ONNX then uses a constant shape tensor; `gen_settings` succeeds.
+
+---
+
+## Problem 5: Python environment — `ModuleNotFoundError: tf2onnx`
+
+**When:** Packages in venv, script run with system Python.
+
+**Error:**
+
+```
+ModuleNotFoundError: No module named 'tf2onnx'
+```
+
+### Triggering code
+
+```bash
+source .venv/bin/activate
+pip3 install tf2onnx          # installs into .venv
+pip3 install tf2onnx          # Success
+
+/opt/homebrew/bin/python3 model.py   # wrong interpreter — fails
+```
+
+Or from IDE Run button with Homebrew Python selected, while pip went to venv.
+
+Also invalid:
+
+```bash
+.venv/bin/python -m pip3 install torch
+# No module named pip3  — use: python -m pip
+```
+
+### Fixed code
+
+```bash
+source .venv/bin/activate
+which python    # .../ezkl/.venv/bin/python
+pip install tf2onnx
+python model.py
+```
+
+---
+
+## Problem 6: TensorFlow not available on Python 3.14
+
+**When:** venv created on Python 3.14.
+
+**Error:**
+
+```
+ERROR: No matching distribution found for tensorflow
+```
+
+### Triggering code
+
+```bash
+python3.14 -m venv .venv
+source .venv/bin/activate
+pip install tensorflow   # fails — no wheel for 3.14
+```
+
+### Fixed code
 
 ```bash
 /opt/homebrew/bin/python3.13 -m venv .venv
@@ -198,90 +254,388 @@ pip install tensorflow tf2onnx ezkl onnx
 
 ---
 
-## Keras → ONNX → ezkl workflow
+## Problem 7: `pip install ezkl` vs the `ezkl` CLI command
 
-See **[problems.md](./problems.md)** for documented errors and root causes, including:
+**When:** Expecting a shell command after pip.
 
-- `KeyError: 'keras_tensor_N'` — Sequential vs Functional API (`tf2onnx`)
-- `Reshape ToTypedTranslator` — why Flatten breaks `ezkl.gen_settings`
-- Dynamic batch size — why ezkl needs fixed shapes
+**Error:**
 
-See `model.py` in this repo for a Functional API export example.
-
----
-
-## Build from source (any platform)
-
-Requires [Rust](https://rustup.rs) and `cargo`. Slow, but works when no pre-built binary exists for your platform.
-
-```bash
-git clone https://github.com/zkonduit/ezkl.git
-cd ezkl
-git checkout v23.0.3   # or a tag/commit that includes your platform
-cargo install --locked --path .
+```
+zsh: command not found: ezkl
 ```
 
-Ensure `~/.cargo/bin` is on your PATH. Source builds can fail on some commits due to dependency issues.
-
----
-
-## Docker (any platform)
-
-If native binaries are unavailable or broken:
+### Triggering code
 
 ```bash
-docker pull zkonduit/ezkl:latest
+pip install ezkl
+# Successfully installed ezkl-23.0.5
+
+ezkl --help   # command not found
 ```
 
-Run `ezkl` inside the container.
+`pip` installs `import ezkl` only — not `/usr/local/bin/ezkl`.
 
----
+### Fixed code
 
-## Uninstall
-
-There is no `curl` uninstall flag. Remove ezkl based on how you installed it:
-
-| How installed | Uninstall |
-|---------------|-----------|
-| GitHub binary / install script | `rm -f ~/.ezkl/ezkl` (or `rm -rf ~/.ezkl`) and remove `~/.ezkl` from PATH in your shell config |
-| pip | `pip uninstall ezkl` |
-| cargo (from source) | `cargo uninstall ezkl` |
-
----
-
-## Check release assets
-
-Before relying on the default installer, confirm your platform is in the latest release:
+CLI (macOS, pin version with macOS binary):
 
 ```bash
-curl -s "https://api.github.com/repos/zkonduit/ezkl/releases/latest" \
-  | python3 -c "import sys,json; [print(a['name']) for a in json.load(sys.stdin).get('assets',[])]"
+curl -s https://raw.githubusercontent.com/zkonduit/ezkl/main/install_ezkl_cli.sh | bash -s v23.0.3
+source ~/.zshenv
+ezkl --help
 ```
 
-If your platform is missing, pin an older tag that includes it (e.g. `bash -s v23.0.3`) or build from source / use Docker.
+---
+
+## Problem 8: ezkl CLI install fails on macOS (latest release)
+
+**When:** Default installer with no version pin.
+
+**Error:** Script stops after `Architecture: aarch64` with no download message; `~/.ezkl` empty.
+
+### Triggering code
+
+```bash
+curl https://raw.githubusercontent.com/zkonduit/ezkl/main/install_ezkl_cli.sh | bash
+# Platform: macos
+# Architecture: aarch64
+# (nothing else — silent exit)
+```
+
+Latest release (e.g. v23.0.5) had no macOS asset at time of writing.
+
+### Fixed code
+
+```bash
+curl -s https://raw.githubusercontent.com/zkonduit/ezkl/main/install_ezkl_cli.sh | bash -s v23.0.3
+source ~/.zshenv
+```
 
 ---
 
-## Troubleshooting
+## Problem 9: `brew install ezkl` / `cargo install ezkl`
 
-| Symptom | Likely cause | Fix |
-|---------|--------------|-----|
-| `command not found: ezkl` after pip | pip installs Python only | Install the GitHub CLI binary |
-| Installer stops after platform/arch line | Latest release missing your platform's asset | Pin an older tag or manual download |
-| `~/.ezkl` is empty | Download never ran | Check release assets; install manually |
-| `cargo install ezkl` fails | Not on crates.io | Use release binary or build from cloned repo |
-| macOS won't open binary | Gatekeeper quarantine | `xattr -d com.apple.quarantine ~/.ezkl/ezkl` |
-| `ModuleNotFoundError: tf2onnx` | Script run with wrong Python | Activate venv; use `python model.py` |
-| `No matching distribution for tensorflow` | Python 3.14 (or unsupported version) | Recreate venv on Python 3.11 or 3.13 |
-| `KeyError: 'keras_tensor_N'` | Sequential model + tf2onnx name mismatch | Use Functional API — see [problems.md](./problems.md) |
-| `Reshape ToTypedTranslator` | Dynamic Flatten / batch in ONNX | Fix static shapes — see [problems.md](./problems.md) |
+### Triggering code
+
+```bash
+brew install ezkl
+# Warning: No available formula with the name "ezkl"
+
+cargo install ezkl --locked
+# error: could not find `ezkl` in registry `crates-io`
+```
+
+No fix via these commands — use GitHub release binary (Problem 8).
 
 ---
 
-## References
+## Problem 10: `failed to load srs from kzg.srs`
 
-- [ezkl GitHub repository](https://github.com/zkonduit/ezkl)
-- [ezkl releases (binaries)](https://github.com/zkonduit/ezkl/releases)
-- [Official installation docs](https://docs.ezkl.xyz/getting-started/installation)
-- [install_ezkl_cli.sh](https://github.com/zkonduit/ezkl/blob/main/install_ezkl_cli.sh)
-- [tf2onnx — Sequential / Keras 3 issues](https://github.com/onnx/tensorflow-onnx/issues/2319)
+**When:** `setup` before SRS exists.
+
+**Error:**
+
+```
+RuntimeError: Failed to run setup: [srs] failed to load srs from kzg.srs
+```
+
+### Triggering code
+
+```python
+ezkl.gen_settings("network.onnx")
+ezkl.compile_circuit("network.onnx", "network.ezkl", "settings.json")
+ezkl.setup("network.ezkl", "vk.key", "pk.key", "kzg.srs")  # kzg.srs does not exist
+```
+
+### Fixed code
+
+```python
+ezkl.get_srs("settings.json", srs_path="kzg.srs")
+ezkl.setup("network.ezkl", "vk.key", "pk.key", "kzg.srs")
+```
+
+---
+
+## Problem 11: `get_srs` — wrong argument order
+
+**When:** Passing `srs_path` as second positional argument.
+
+**Error:**
+
+```
+TypeError: argument 'logrows': 'str' object cannot be interpreted as an integer
+```
+
+### Triggering code
+
+```python
+ezkl.get_srs("settings.json", "kzg.srs")  # "kzg.srs" bound to logrows, not srs_path
+```
+
+### Fixed code
+
+```python
+ezkl.get_srs("settings.json", srs_path="kzg.srs")
+```
+
+---
+
+## Problem 12: `gen_witness` — wrong paths and missing `input.json`
+
+**When:** `gen_witness()` with defaults.
+
+**Errors:**
+
+```
+(model.compiled) No such file or directory
+(input.json) No such file or directory
+```
+
+### Triggering code
+
+```python
+ezkl.gen_witness()  # defaults: data=input.json, model=model.compiled
+```
+
+```bash
+ezkl gen-witness   # same defaults
+```
+
+This project uses `network.ezkl`, not `model.compiled`, and had no `input.json`.
+
+### Fixed code
+
+```python
+ezkl.gen_witness(
+    data="input.json",
+    model="network.ezkl",
+    output="witness.json",
+)
+```
+
+---
+
+## Problem 13: `input.json` format — flat vs nested
+
+**When:** Nested array layout in `input_data`.
+
+**Error:**
+
+```
+failed to deserialize FileSourceInner
+```
+
+### Triggering code
+
+```python
+sample_input = np.random.random((1, 28, 28, 1)).astype(np.float32)
+json.dump(
+    {"input_data": sample_input.tolist(), "output_data": sample_output.tolist()},
+    f,
+)
+ezkl.gen_witness(data="input.json", model="network.ezkl", output="witness.json")
+# fails — nested [1][28][28][1] layout
+```
+
+### Fixed code
+
+```python
+json.dump(
+    {
+        "input_data": [sample_input.reshape(-1).tolist()],
+        "output_data": [sample_output.reshape(-1).tolist()],
+    },
+    f,
+)
+```
+
+---
+
+## Problem 14: `prove()` needs explicit arguments
+
+**When:** Calling `prove()` with no paths.
+
+### Triggering code
+
+```python
+ezkl.gen_witness(data="input.json", model="network.ezkl", output="witness.json")
+ezkl.prove()   # missing witness, model, pk_path, srs_path
+```
+
+### Fixed code
+
+```python
+ezkl.prove(
+    witness="witness.json",
+    model="network.ezkl",
+    pk_path="pk.key",
+    proof_path="proof.json",
+    srs_path="kzg.srs",
+)
+ezkl.verify(
+    proof_path="proof.json",
+    settings_path="settings.json",
+    vk_path="vk.key",
+    srs_path="kzg.srs",
+)
+```
+
+---
+
+## Problem 15: Pipeline is very slow
+
+**When:** Running the full script on every iteration.
+
+### Triggering code
+
+```python
+# entire pipeline every run — no caching / skip logic
+ezkl.gen_settings("network.onnx")
+ezkl.compile_circuit("network.onnx", "network.ezkl", "settings.json")
+ezkl.setup("network.ezkl", "vk.key", "pk.key", "kzg.srs")
+ezkl.gen_witness(...)
+ezkl.prove(...)   # ~914k rows in settings.json — minutes on CPU
+```
+
+`settings.json` shows `"num_rows": 913630` for this model (Conv + Dense(21632→10) + softmax).
+
+### Mitigation
+
+Only re-run witness + prove after artifacts exist; use a smaller model while learning.
+
+---
+
+## Problem 16: CLI vs Python version mismatch
+
+**When:** Mixing Homebrew/CLI binary and pip package.
+
+### Triggering code
+
+```bash
+ezkl gen-witness -D input.json -M network.ezkl -O witness.json
+# [W] Version mismatch: CLI version is 23.0.3 but artifact version is 23.0.5
+```
+
+CLI pinned to v23.0.3 (macOS); Python `pip install ezkl` is v23.0.5.
+
+---
+
+## Problem 17: `create-evm-verifier` — SRS not found
+
+**When:** Bare command, no `--srs-path`.
+
+**Error:**
+
+```
+[srs] failed to load srs from ~/.ezkl/srs/kzg17.srs
+```
+
+### Triggering code
+
+```bash
+ezkl create-evm-verifier
+# looks for ~/.ezkl/srs/kzg17.srs — not ./kzg.srs
+```
+
+### Fixed code
+
+```bash
+ezkl create-evm-verifier \
+  --srs-path kzg.srs \
+  -S settings.json \
+  --vk-path vk.key \
+  --sol-code-path evm_deploy.sol
+```
+
+Requires prior `ezkl.setup(...)` so `vk.key` exists.
+
+---
+
+## Problem 18: `create-evm-verifier` — missing `solc`
+
+**When:** solc not installed; network blocked.
+
+**Error:**
+
+```
+[eth] svm error: error sending request for url (https://binaries.soliditylang.org/...)
+```
+
+### Triggering code
+
+```bash
+ezkl create-evm-verifier --srs-path kzg.srs -S settings.json --vk-path vk.key
+# ezkl tries to auto-install solc via svm — fails without network
+```
+
+Install `solc` manually or retry with network access.
+
+---
+
+## Problem 19: Deploying contracts vs running `web3.js`
+
+**When:** Treating `web3.js` like a contract to deploy.
+
+### Triggering code
+
+```bash
+archon job -a test gen-witness   # wrong tool — Archon ≠ ezkl
+brew install archon                # unrelated CLI
+```
+
+```javascript
+// web3.js — calls verify on-chain; does not deploy itself
+const proof = require('./proof.json');
+const publicInputs = require('./input.json');  // may not match verifier calldata format
+
+verifier.methods.verify(proof, publicInputs).call()
+```
+
+### Fixed workflow
+
+1. Deploy `evm_deploy.sol` via Hardhat / Foundry / Remix
+2. Set real `verifierAddress` in `web3.js`
+3. Run `node web3.js` (may need ezkl EVM calldata encoding for proof/inputs)
+
+---
+
+## Problem 20: Slow `git push` after removing `node_modules`
+
+**When:** `node_modules` was committed, then gitignored.
+
+### Triggering code
+
+```bash
+git add .
+git commit -m "add hardhat"   # accidentally included node_modules (5621 files)
+# later: add node_modules to .gitignore and git rm --cached
+git push   # still slow — history retains all blobs (~124MB .git)
+```
+
+`.gitignore` only prevents **future** commits; it does not remove blobs from history.
+
+### Fix
+
+Rewrite history (`git filter-repo --path node_modules --invert-paths`) or fresh repo.
+
+---
+
+## Quick reference
+
+| Error / symptom | Stage | Triggering code (summary) | Fix |
+|-----------------|-------|---------------------------|-----|
+| `KeyError: 'keras_tensor_N'` | `tf2onnx` | `Sequential([...]); from_keras(model)` | Functional API |
+| `Reshape ToTypedTranslator` | `gen_settings` | `Flatten()` + dynamic export | `Reshape((21632,))` + static batch |
+| Batch `unk__32` | ONNX export | `Input(shape=...)` only | `input_signature` |
+| `ModuleNotFoundError: tf2onnx` | Python | `/opt/homebrew/bin/python3 model.py` | `python model.py` in venv |
+| No TensorFlow on pip | Python 3.14 | `python3.14 -m venv` | venv on 3.11/3.13 |
+| `command not found: ezkl` | Install | `pip install ezkl` then `ezkl` | CLI install script |
+| Installer stops at `aarch64` | macOS CLI | `install_ezkl_cli.sh \| bash` (no tag) | `bash -s v23.0.3` |
+| `failed to load srs` | `setup` | `setup(..., "kzg.srs")` before SRS | `get_srs` first |
+| `get_srs` TypeError | Python API | `get_srs("settings.json", "kzg.srs")` | `srs_path="kzg.srs"` |
+| `model.compiled` not found | `gen_witness` | `gen_witness()` | `model="network.ezkl"` |
+| `input.json` not found | `gen_witness` | no file created | write flat JSON |
+| deserialize error | `gen_witness` | `sample_input.tolist()` nested | `.reshape(-1).tolist()` |
+| Slow runs | pipeline | full `model.py` every time | skip compile/setup |
+| `kzg17.srs` not found | EVM verifier | `create-evm-verifier` bare | `--srs-path kzg.srs` |
+| Slow git push | git | committed `node_modules` once | filter-repo / fresh repo |
