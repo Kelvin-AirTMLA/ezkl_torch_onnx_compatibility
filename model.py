@@ -39,7 +39,6 @@ with open("input.json", "w") as f:
         f,
     )
 
-
 ezkl.gen_witness(
     data="input.json",
     model="network.ezkl",
