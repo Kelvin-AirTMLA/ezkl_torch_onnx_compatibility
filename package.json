@@ -1,0 +1,25 @@
+{
+  "name": "ezkl",
+  "version": "1.0.0",
+  "description": "A practical guide to installing [ezkl](https://github.com/zkonduit/ezkl) and avoiding common pitfalls in the Keras → ONNX → ezkl workflow.",
+  "main": "web3.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Kelvin-AirTMLA/ezkl_torch_onnx_compatibility.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Kelvin-AirTMLA/ezkl_torch_onnx_compatibility/issues"
+  },
+  "homepage": "https://github.com/Kelvin-AirTMLA/ezkl_torch_onnx_compatibility#readme",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^7.0.0",
+    "hardhat": "^3.9.0"
+  }
+}
