@@ -1,6 +1,5 @@
-import json
-
-import ezkl
+# import json
+# import ezkl
 import numpy as np
 import tensorflow as tf
 import tf2onnx
@@ -33,9 +32,14 @@ onnx_model, _ = tf2onnx.convert.from_keras(model)
 
 with open("network.onnx", "wb") as f:
     f.write(onnx_model.SerializeToString())
+    
+print(inputs)
+print(x)
+print(outputs)
 
 # # --- ezkl pipeline ---
 # ezkl.gen_settings("network.onnx")
+# ezkl.calibrate_settings("network.onnx", "settings.json", target="resources")
 # ezkl.compile_circuit("network.onnx", "network.ezkl", "settings.json")
 
 # if not __import__("os").path.exists("kzg.srs"):
