@@ -32,7 +32,7 @@ Keras → tf2onnx → network.onnx → gen_settings → compile_circuit → get_
 
 ---
 
-## Problem 1: `KeyError: 'keras_tensor_4'` (Sequential vs Functional)
+## Problem 1: `KeyError: 'keras_tensor_N'` (Sequential vs Functional)
 
 **When:** `tf2onnx.convert.from_keras(model)` with a **Sequential** model.
 
@@ -41,6 +41,8 @@ Keras → tf2onnx → network.onnx → gen_settings → compile_circuit → get_
 ```
 KeyError: 'keras_tensor_4'
 ```
+
+The exact number varies by session (`keras_tensor_23`, `keras_tensor_4`, etc.) — it is **not** the input count. Keras auto-increments a global counter for symbolic tensors as the graph is built.
 
 ### Triggering code
 
@@ -52,14 +54,40 @@ model = tf.keras.Sequential([
     tf.keras.layers.Dense(10, activation="softmax"),
 ])
 
-onnx_model, _ = tf2onnx.convert.from_keras(model)  # KeyError: 'keras_tensor_4'
+onnx_model, _ = tf2onnx.convert.from_keras(model)  # KeyError: 'keras_tensor_N'
 ```
 
 ### Why it fails
 
-`from_keras` traces the graph and maps output names via `reverse_lookup`. Sequential models get auto-generated names like `keras_tensor_4` that do not match the traced graph.
+`keras_tensor_N` is **not a layer** — it is an auto-generated name for a **symbolic output tensor** (data flowing between layers).
+
+During export, tf2onnx (`convert.py`):
+
+1. **Traces** the model → a TensorFlow `ConcreteFunction` with its own internal tensor names.
+2. **Builds** `tensors_to_rename` from the trace (Keras/structured name ↔ traced TF name).
+3. **Inverts** it to `reverse_lookup` (Keras name → traced TF name).
+4. **Looks up** the model's output name in `reverse_lookup` to find the traced output.
+
+The crash is step 4: the name tf2onnx looks up is not a key in `reverse_lookup`.
+
+**Where tf2onnx gets the output name (Sequential, current Keras/TF):**
+
+Sequential has `output`, `outputs`, and `output_shape` — but **no** `output_names` attribute. tf2onnx falls back in `_get_output_names()`:
+
+```python
+model.outputs[0].name           # e.g. 'keras_tensor_23:0'
+.split('/')[0]                  # → 'keras_tensor_23'  ← lookup key
+```
+
+Then at line ~529: `reverse_lookup['keras_tensor_23']` → **KeyError**, because the trace registered different keys (e.g. from `concrete_func.structured_outputs`).
+
+Functional API usually works because Keras tensor names and traced graph names **align** after export. Sequential often does not.
+
+**Common false lead:** printing Functional API tensors (`keras_tensor_24`–`27`) while exporting a Sequential `model` — those are different graphs; only the object passed to `from_keras(model)` matters.
 
 ### Fixed code
+
+Use the Functional API and wrap with `tf.keras.Model`:
 
 ```python
 inputs = tf.keras.Input(shape=(28, 28, 1))
@@ -70,6 +98,8 @@ model = tf.keras.Model(inputs=inputs, outputs=outputs)
 
 onnx_model, _ = tf2onnx.convert.from_keras(model)  # works
 ```
+
+For this repo's full ezkl pipeline, also replace `Flatten()` with explicit `Reshape((21632,))` — see Problem 2.
 
 Related issues: [tensorflow-onnx #2319](https://github.com/onnx/tensorflow-onnx/issues/2319), [#2348](https://github.com/onnx/tensorflow-onnx/issues/2348), [#2448](https://github.com/onnx/tensorflow-onnx/issues/2448).
 
