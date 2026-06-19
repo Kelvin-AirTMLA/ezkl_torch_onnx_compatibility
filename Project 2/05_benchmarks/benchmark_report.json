@@ -1,0 +1,9 @@
+{
+  "project": "TrustAgent Verifiable Credit Scorer",
+  "model_training_loss": null,
+  "onnx_file_footprint_kb": null,
+  "witness_computation_latency_ms": null,
+  "proof_generation_latency_ms": null,
+  "proof_file_footprint_bytes": null,
+  "note": "Run 05_benchmarks/benchmark_runner.py to populate this report."
+}

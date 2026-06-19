@@ -1,98 +1,87 @@
-# Project 2: Verifiable Algorithmic Insurance (DeFi Risk Assessor)
+# Project 2: TrustAgent — Verifiable Credit Scorer
 
-Automates high-stakes business insurance processing without trusting a central corporate adjuster. A decentralized insurance pool releases payouts only when an AI model’s decision is backed by a valid zk-SNARK proof — not a human signature or opaque spreadsheet.
-
----
-
-## The problem
-
-Traditional insurance at scale depends on centralized adjusters, slow manual review, and trust in institutions that policyholders cannot audit. On-chain insurance cannot run complex floating-point risk models inside the EVM. Uploading raw business telemetry (logistics logs, weather damage reports, supply-chain latency) on-chain exposes competitive and operational secrets.
+Automates decentralized credit-tier decisions with a zk-SNARK proof. Private financial inputs stay off-chain; the chain only verifies that a PyTorch MLP was executed correctly.
 
 ---
 
-## How it works
-
-### Off-chain AI
-
-A **PyTorch** model evaluates real-world business metrics:
-
-- Supply chain latency and delivery logs  
-- Logistics failure patterns  
-- Local weather / damage indicators  
-- Historical loss-event patterns  
-
-The model outputs a **payout eligibility score** or binary decision: does this claim meet the policy’s mathematical threshold?
-
-### Cryptographic layer (EZKL)
-
-1. Export the model to **ONNX** with fixed, static input shapes.  
-2. Run the **EZKL pipeline**: `gen_settings` → `compile_circuit` → `setup` → `gen_witness` → `prove`.  
-3. Quantize floating-point metrics to the integer field the circuit expects.  
-4. Produce a lightweight **zk-SNARK proof** that the model was executed correctly on the submitted (private) inputs.
-
-### On-chain settlement
-
-A **decentralized insurance pool** smart contract:
-
-1. Receives the proof and public inputs (e.g. policy ID, claim window, payout tier — not raw logs).  
-2. Calls an **EZKL-generated Solidity verifier**.  
-3. If verification succeeds and the public inputs match an open claim, the contract **automatically releases** the insurance payout from the vault.
-
----
-
-## Why this is production-shaped (not a demo CRUD app)
-
-| Property | Benefit |
-|----------|---------|
-| Trustless adjudication | No adjuster can silently override the model |
-| Private inputs | Raw business data never hits the chain |
-| Auditable logic | Model + circuit are versioned; proofs bind to a specific policy ruleset |
-| Automated payouts | Valid proof → vault release, no manual wire transfer |
-
----
-
-## Architecture (planned)
+## Pipeline
 
 ```
-├── 01_environment_setup/     # Python, EZKL CLI, Hardhat/Foundry
-├── 02_model_export/          # PyTorch risk model → ONNX
-├── 03_circuit_generation/    # settings.json, network.ezkl, SRS
-├── 04_proof_and_verify/      # witness, proof, local verify
-└── 05_on_chain/              # verifier contract, insurance pool, payout logic
+01_environment_setup/   → pip install
+02_model_export/        → train PyTorch MLP → credit_scorer.onnx
+03_circuit_generation/  → gen_settings + calibrate → settings.json
+04_proof_and_verify/    → compile → witness → prove → verify → EVM verifier
+05_benchmarks/          → end-to-end timing report
 ```
 
 ---
 
-## Tech stack
+## Model spec
 
-| Layer | Tool |
-|-------|------|
-| Model | PyTorch |
-| Export | ONNX |
-| Proving | EZKL (Halo2 / KZG) |
-| Chain | EVM (verifier via `create-evm-verifier`) |
-| Indexing (optional) | The Graph, event listeners |
-
----
-
-## YouTube angle
-
-Show the full loop: **messy real-world floats → quantized circuit → proof → automatic vault release**. Contrast with “oracle posts a boolean” — here the viewer sees *why* zkML matters for DeFi insurance.
+| | |
+|---|---|
+| **Input** | `(1, 3)` — `[Normalized_Income, Total_Debt, Delinquency_Marker]` |
+| **Output** | `(1, 3)` — logits for tier `0` High Risk, `1` Medium, `2` Prime |
+| **Architecture** | 3-layer MLP (Linear → ReLU → Linear → ReLU → Linear) |
+| **Export** | `torch.onnx.export`, opset 15, static batch |
 
 ---
 
-## Roadmap
+## Quick start
 
-- [ ] Define policy schema (public vs private inputs)  
-- [ ] Train / export risk classifier to ONNX  
-- [ ] EZKL compile + prove on sample claim bundle  
-- [ ] Deploy verifier + insurance pool on testnet  
-- [ ] End-to-end demo: submit claim data → proof → payout  
+```bash
+cd "Project 2"
+python -m venv .venv && source .venv/bin/activate
+pip install -r 01_environment_setup/requirements.txt
+
+python 02_model_export/train_and_export.py
+python 03_circuit_generation/compile_circuit.py
+python 04_proof_and_verify/generate_proof.py
+
+# Full benchmark (training + ONNX + witness + prove metrics)
+python 05_benchmarks/benchmark_runner.py
+```
+
+`prove` may take several minutes on CPU for this circuit size.
+
+---
+
+## Directory layout
+
+```
+Project 2/
+├── 01_environment_setup/
+│   └── requirements.txt
+├── 02_model_export/
+│   ├── train_and_export.py
+│   └── credit_scorer.onnx          # generated
+├── 03_circuit_generation/
+│   ├── input.json                  # private financial witness payload
+│   ├── compile_circuit.py
+│   └── settings.json               # generated
+├── 04_proof_and_verify/
+│   ├── generate_proof.py
+│   ├── witness.json                # generated
+│   ├── network.proof               # generated
+│   └── TrustAgentVerifier.sol      # generated (requires solc)
+└── 05_benchmarks/
+    ├── benchmark_runner.py
+    └── benchmark_report.json
+```
+
+---
+
+## Public vs private
+
+| Private (witness) | Public (on-chain) |
+|-------------------|-------------------|
+| Income, debt, delinquency | Proof bytes |
+| Raw financial decimals | Credit tier / policy ID (optional) |
 
 ---
 
 ## References
 
-- [EZKL docs](https://docs.ezkl.xyz/)  
-- [README.md](../README.md) — errors, triggering code, fixes  
-- [reference-pipeline/](../reference-pipeline/) — working end-to-end tutorial  
+- [../README.md](../README.md) — common ezkl errors and fixes  
+- [../reference-pipeline/](../reference-pipeline/) — Keras tutorial (this project uses PyTorch)  
+- [EZKL docs](https://docs.ezkl.xyz/)
