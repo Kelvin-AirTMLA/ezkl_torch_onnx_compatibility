@@ -1,7 +1,0 @@
-# TrustAgent: Verifiable Credit Scorer — pinned dependencies
-# Install: pip install -r requirements.txt
-
-torch==2.2.2
-onnx==1.16.0
-numpy==1.26.4
-ezkl==23.0.5

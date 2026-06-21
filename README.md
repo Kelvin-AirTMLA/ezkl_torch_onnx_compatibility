@@ -652,20 +652,23 @@ Rewrite history (`git filter-repo --path node_modules --invert-paths`) or fresh 
 
 ## Quick reference
 
-| Error / symptom | Stage | Triggering code (summary) | Fix |
-|-----------------|-------|---------------------------|-----|
-| `KeyError: 'keras_tensor_N'` | `tf2onnx` | `Sequential([...]); from_keras(model)` | Functional API |
-| `Reshape ToTypedTranslator` | `gen_settings` | `Flatten()` + dynamic export | `Reshape((21632,))` + static batch |
-| Batch `unk__32` | ONNX export | `Input(shape=...)` only | `input_signature` |
-| `ModuleNotFoundError: tf2onnx` | Python | `/opt/homebrew/bin/python3 model.py` | `python model.py` in venv |
-| No TensorFlow on pip | Python 3.14 | `python3.14 -m venv` | venv on 3.11/3.13 |
-| `command not found: ezkl` | Install | `pip install ezkl` then `ezkl` | CLI install script |
-| Installer stops at `aarch64` | macOS CLI | `install_ezkl_cli.sh \| bash` (no tag) | `bash -s v23.0.3` |
-| `failed to load srs` | `setup` | `setup(..., "kzg.srs")` before SRS | `get_srs` first |
-| `get_srs` TypeError | Python API | `get_srs("settings.json", "kzg.srs")` | `srs_path="kzg.srs"` |
-| `model.compiled` not found | `gen_witness` | `gen_witness()` | `model="network.ezkl"` |
-| `input.json` not found | `gen_witness` | no file created | write flat JSON |
-| deserialize error | `gen_witness` | `sample_input.tolist()` nested | `.reshape(-1).tolist()` |
-| Slow runs | pipeline | full `model.py` every time | skip compile/setup |
-| `kzg17.srs` not found | EVM verifier | `create-evm-verifier` bare | `--srs-path kzg.srs` |
-| Slow git push | git | committed `node_modules` once | filter-repo / fresh repo |
+
+| Error / symptom                | Stage          | Triggering code (summary)              | Fix                                |
+| ------------------------------ | -------------- | -------------------------------------- | ---------------------------------- |
+| `KeyError: 'keras_tensor_N'`   | `tf2onnx`      | `Sequential([...]); from_keras(model)` | Functional API                     |
+| `Reshape ToTypedTranslator`    | `gen_settings` | `Flatten()` + dynamic export           | `Reshape((21632,))` + static batch |
+| Batch `unk__32`                | ONNX export    | `Input(shape=...)` only                | `input_signature`                  |
+| `ModuleNotFoundError: tf2onnx` | Python         | `/opt/homebrew/bin/python3 model.py`   | `python model.py` in venv          |
+| No TensorFlow on pip           | Python 3.14    | `python3.14 -m venv`                   | venv on 3.11/3.13                  |
+| `command not found: ezkl`      | Install        | `pip install ezkl` then `ezkl`         | CLI install script                 |
+| Installer stops at `aarch64`   | macOS CLI      | `install_ezkl_cli.sh | bash` (no tag)  | `bash -s v23.0.3`                  |
+| `failed to load srs`           | `setup`        | `setup(..., "kzg.srs")` before SRS     | `get_srs` first                    |
+| `get_srs` TypeError            | Python API     | `get_srs("settings.json", "kzg.srs")`  | `srs_path="kzg.srs"`               |
+| `model.compiled` not found     | `gen_witness`  | `gen_witness()`                        | `model="network.ezkl"`             |
+| `input.json` not found.        | `gen_witness`  | no file created                        | write flat JSON                    |
+| deserialize error              | `gen_witness`  | `sample_input.tolist()` nested         | `.reshape(-1).tolist()`            |
+| Slow runs                      | pipeline       | full `model.py` every time             | skip compile/setup                 |
+| `kzg17.srs` not found          | EVM verifier   | `create-evm-verifier` bare             | `--srs-path kzg.srs`               |
+| Slow git push                  | git            | committed `node_modules` once          | filter-repo / fresh repo           |
+
+
